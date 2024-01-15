@@ -1,0 +1,409 @@
+---
+title: "Intro to data.table"
+author: "Susanna Supalla"
+date: "2024-01-16"
+output: 
+  ioslides_presentation:
+    smaller: true
+    css: presentation_style.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## {data-background=tidyverse_screenshot.png data-background-size=contain}
+
+## Another Opinion: data.table
+> Data manipulation operations such as subset, group, update, join etc., are all inherently related. Keeping these related operations together allows for:
+>
+> -   concise and consistent syntax irrespective of the set of operations you would like to perform to achieve your end goal.
+>
+> -   performing analysis fluidly without the cognitive burden of having to map each operation to a particular function from a potentially huge set of functions available before performing the analysis.
+>
+> -   automatically optimising operations internally, and very effectively, by knowing precisely the data required for each operation, leading to very fast and memory efficient code.
+>
+> Briefly, if you are interested in reducing programming and compute time tremendously, then this package is for you. The philosophy that data.table adheres to makes this possible.
+
+`rdatatable.gitlab.io/data.table/articles/datatable-intro.html`
+
+## My favorite parts about data.table
+
+-   Fast file reading
+-   Efficient, readable syntax
+
+## Data for Today's Examples: DIME
+### Database on Ideology, Money in Politics, and Elections
+
+- Political fundraising data
+- 500 million political contributions, 1979 to 2022
+- Using today: 
+  - 1980 data
+    - Row count: 458,213
+  - 2016 data
+    - Row count: 54,311,783
+
+Bonica, Adam. 2023. Database on Ideology, Money in Politics, and Elections: Public version 3.1 [Computer file]. Stanford, CA: Stanford University Libraries. https://data.stanford.edu/dime.
+
+## Packages for Today's Examples
+
+-   `data.table`
+-   `tidyverse`: for comparison purposes
+-   `tictoc`: for capturing runtimes
+-   `R.utils`: for unzipping large files
+
+
+## Install Packages and Data
+```{r install_load, eval = FALSE, echo = TRUE}
+install.packages('data.table','tidyverse','R.utils','tictoc')
+```
+
+```{r load, echo = TRUE}
+library(data.table)
+library(tictoc)
+```
+
+```{r download_1980, eval = FALSE, echo = TRUE}
+download.file('https://www.dropbox.com/scl/fi/gdvpzggkb0in9yruircpi/contribDB_1980.csv.gz?rlkey=rs07632m813k3g85ndek1z16g&dl=1', destfile = '~/Downloads/contribDB_1980.csv.gz')
+```
+
+Warning: this file may be larger than space available on your machine!
+```{r download_2016, eval = FALSE, echo = TRUE}
+#check available disk space before uncommenting this code
+
+#download.file('https://www.dropbox.com/scl/fi/pgmoo21myed3qxsuef4rd/contribDB_2016.csv.gz?rlkey=xxc8n6lt0gck8u71w6ncyfqjp&dl=1', destfile = '~/Downloads/contribDB_2016.csv.gz')
+```
+## Reading Files
+
+- `data.table`: `fread()` function
+- `tidyverse`: `readr` library, `read_csv()` function
+- `tidyverse`: `vroom` library, `vroom()` function
+- `base R`: `read.csv()` function
+  - Note: not even trying this option to avoid crashing!
+
+## Reading Files & Timing
+
+```{r load_1980_tbl, echo = TRUE}
+tic('fread 1980')
+contribdb_dt <- fread(cmd = 'gunzip -cq ~/Downloads/contribDB_1980.csv.gz')
+toc(log = TRUE)
+
+tic('read_csv 1980')
+contribdb_tb <- readr::read_csv('~/Downloads/contribDB_1980.csv.gz',
+                                show_col_types = F)
+toc(log = TRUE)
+```
+
+## Reading Files & Timing - More
+
+```{r load_1980_tbl2, echo = TRUE}
+tic('vroom 1980')
+contribdb_vr <- vroom::vroom('~/Downloads/contribDB_1980.csv.gz',
+                             show_col_types = F)
+toc(log = TRUE)
+```
+
+## Reading Files & Timing - Problems?
+
+```{r load_1980_tbl3, echo = TRUE}
+readr::problems(contribdb_tb)
+```
+
+## Reading Files & Timing - Looking at Problems
+
+```{r load_1980_tbl4, echo = TRUE}
+contribdb_tb[458195, 40]
+contribdb_dt[458195, 40]
+contribdb_vr[458195, 40]
+```
+
+## Reading Files & Timing - Repairing Problems
+
+```{r load_1980_tbl5, echo = TRUE}
+tic('vroom 1980')
+contribdb_vr <- vroom::vroom('~/Downloads/contribDB_1980.csv.gz',
+                             show_col_types = F,
+                             guess_max = 500000)
+toc(log = TRUE)
+```
+
+## Cleaning Up
+
+```{r cleaning_up, echo = TRUE}
+rm(list=ls())
+gc()
+```
+
+## Reading Larger Files - fread
+Warning: this file may be larger than space available on your machine!
+```{r load_2016, eval = FALSE, echo = TRUE}
+tic('fread 2016')
+contribdb_dt <- fread(cmd = 'gunzip -cq ~/Downloads/contribDB_2016.csv.gz')
+toc(log = TRUE)
+```
+
+## Cleaning Up Again
+
+```{r cleaning_up2, echo = TRUE}
+rm(list=ls())
+gc()
+```
+
+## Reading Larger Files - vroom
+
+Evaluate on your own!
+
+```{r load_2016_2, eval = FALSE, echo = TRUE}
+tic('vroom 2016')
+contribdb_vr <- vroom::vroom('~/Downloads/contribDB_2016.csv.gz')
+toc(log = TRUE)
+```
+
+# Working with The Data
+
+## Loading a Subset of Data
+
+```{r load_1980_again, eval = FALSE, echo = TRUE}
+
+contribdb_dt <- fread(cmd = 'gunzip -cq ~/Downloads/contribDB_1980.csv.gz')
+contribdb_dt
+```
+
+
+# Syntax
+
+## data.table Syntax
+
+`DT[i, j, by]`
+
+- `i`: subset by rows
+- `j`: select/compute columns
+- `by`: group for computation/aggregation
+
+## Subset Examples
+```{r subset, eval = FALSE, echo = TRUE}
+
+contribdb_dt[1500:1700,]
+contribdb_dt[1500:1700] #comma not needed
+
+contribdb_dt[c(1,6,7)]
+
+contribdb_dt[order(amount, decreasing = TRUE)] #sort
+
+contribdb_dt[amount > 100000] #filter
+```
+
+## Select/Compute Examples
+```{r select, eval = FALSE, echo = TRUE}
+
+contribdb_dt[, amount] #return as vector
+contribdb_dt[, list(amount)] #return as data.table
+contribdb_dt[, c("amount")] #same syntax as data.frame
+
+varnames_select <- c("amount") 
+contribdb_dt[, ..varnames_select] #can use variable
+
+contribdb_dt[, sum(amount)] #computation
+```
+
+## Group Aggregation Examples
+```{r group, eval = FALSE, echo = TRUE}
+
+contribdb_dt[ , sum(amount), by = list(contributor.gender)]
+
+contribdb_dt[, sum(amount), by = .(contributor.gender)] #alternate syntax
+
+```
+
+# Helper Functions
+
+## Helpers for Subsetting/Filtering
+```{r subset2, eval = FALSE, echo = TRUE}
+
+contribdb_dt[contributor.lname %like% 'trump']
+
+contribdb_dt[date %between% c('1980-12-01','1980-12-02')]
+
+contribdb_dt[contributor.fname %chin% c('bill','hillary')]
+```
+
+## Shortcuts for Computations
+```{r select2, eval = FALSE, echo = TRUE}
+
+contribdb_dt[, .N] #number of rows
+
+contribdb_dt[, .SD, .SDcols = "amount"] #subset of data
+
+contribdb_dt[, .I[amount > 100000]] #row numbers
+```
+
+## Multiple Computations with `list()` or `.()`
+```{r select3, eval = FALSE, echo = TRUE}
+
+contribdb_dt[, list(total_amount = sum(amount),
+                    mean_amount = mean(amount),
+                    max_amount = max(amount))]
+
+contribdb_dt[, .(total_amount = sum(amount),
+                  mean_amount = mean(amount),
+                  max_amount = max(amount))]
+
+```
+
+## Multiple Groupings with `list()` or `.()`
+```{r group2, eval = FALSE, echo = TRUE}
+
+contribdb_dt[, list(total_amount = sum(amount),
+                  mean_amount = mean(amount),
+                  max_amount = max(amount)),
+             by = list(contributor.gender)]
+
+contribdb_dt[, .(total_amount = sum(amount),
+                  mean_amount = mean(amount),
+                  max_amount = max(amount)),
+             by = .(contributor.gender)]
+
+```
+
+## Subsetting, Selecting, and Grouping Together
+```{r subsetselectgroup, eval = FALSE, echo = TRUE}
+
+contribdb_dt[contributor.fname %chin% c('bill','hillary') &
+               date %between% c('1980-12-01','1980-12-31')
+             , .(total_amount = sum(amount),
+                  mean_amount = mean(amount),
+                  max_amount = max(amount))
+             , by = .(contributor.gender)]
+
+contribdb_dt[contributor.fname %chin% c('bill','hillary') &
+               date %between% c('1980-12-01','1980-12-31')
+             , .(total_amount = sum(amount),
+                  mean_amount = mean(amount),
+                  max_amount = max(amount),
+                 num_contributions = .N)
+             , by = .(contributor.gender,
+                      female = (contributor.gender == 'F'),
+                      contributor.state)]
+```
+
+## Chaining Examples
+```{r chain, eval = FALSE, echo = TRUE}
+
+test <- contribdb_dt[contributor.fname %chin% c('bill','hillary') &
+                       date %between% c('1980-01-01','1980-12-31')]
+
+test
+test[,.N]
+
+contribdb_dt[contributor.fname %chin% c('bill','hillary') &
+               date %between% c('1980-01-01','1980-12-31')][,.N]
+
+contribdb_dt[contributor.fname %chin% c('bill','hillary') &
+               date %between% c('1980-01-01',
+                                '1980-12-31')][,.N
+                                               , by = .(contributor.gender)]
+```
+# Comparing Syntax to `tidyverse`
+
+## Convert a data.table to another type
+
+- a data.frame underlies the data.table, so data.frame syntax will already work with a data.table
+
+- a data.table can be converted to a tbl just as a data.frame can
+
+```{r convert, eval = FALSE, echo = TRUE}
+
+contribdb_tbl <- tibble::as_tibble(contribdb_dt)
+
+```
+
+## Exercise: `data.table` vs `tidyverse`
+
+I want one data.table that summarizes the metrics below for only women named 'sarah':
+  
+  - a: number of contributions from sarahs (variable name `a_num_contributions`)
+  
+  - b: number of contributions from sarahs that are between \$50 and \$150 (`b_50to150_num_contributions`)
+ 
+  - c: total amount of contributions from sarahs (`c_amt_contributions`)
+ 
+  - d: total amount of contributions from sarahs that are between \$50 and \$150 (`d_50to150_amt_contributions`)
+ 
+  - e: number of unique sarahs (`e_last_name_s_num`)
+ 
+  - f: average number of contributions from a sarah (`f_mean_num_contributions`)
+  
+  - g: average total amount of a contribution from a sarah (`g_mean_amt_contributions`)
+
+- grouped by the state of the 'sarah' contributors (`sarah_state`)
+- ordered by `a`, then by alphabetical order of `sarah_state`
+
+
+# More `data.table` Manipulation
+
+## Adding Columns, Copying DTs
+
+```{r new_col, eval = FALSE, echo = TRUE}
+
+contribdb_dt[, contributor.is_sarah := contributor.fname == 'sarah']
+
+#adding a variable and assigning to a new data.table at the same time makes the variable in the original:
+contribdb_dt_cp <- contribdb_dt[, contributor.is_50to150 := amount %between% c(50,150)]
+contribdb_dt_cp$contributor.is_50to150[1:5]
+contribdb_dt$contributor.is_50to150[1:5]
+
+contribdb_dt_cp2 <- contribdb_dt
+contribdb_dt_cp2[, contributor.is_sarah_50to150 := contributor.is_sarah &
+               contributor.is_50to150]
+contribdb_dt_cp2$contributor.is_sarah_50to150[1:5]
+contribdb_dt_cp$contributor.is_sarah_50to150[1:5]
+contribdb_dt$contributor.is_sarah_50to150[1:5]
+
+```
+
+## New DTs
+
+```{r copy2, eval = FALSE, echo = TRUE}
+
+contribdb_dt_new_cp <- data.table(contribdb_dt)
+
+contribdb_dt_aggregated <- contribdb_dt[, .(amount_statewide = sum(amount))
+                                     , by = .(contributor.state)]
+
+contribdb_dt_filtered <- contribdb_dt[contributor.state == '']
+
+```
+
+## Deleting Columns
+
+```{r delete, eval = FALSE, echo = TRUE}
+
+names(contribdb_dt_new_cp)
+
+contribdb_dt_new_cp[, contributor.is_sarah_50to150 := NULL]
+
+names(contribdb_dt_new_cp)
+
+names(contribdb_dt)
+
+```
+
+# Other Blazing Fast Things
+
+## Merging and Reshaping Tables
+
+- `merge.data.table`
+- `foverlaps`
+- `join`
+- `roll`
+- `melt`
+- `dcast`
+
+# Further Reading
+
+## Online Resources
+
+- All things data.table: https://rdatatable.gitlab.io/data.table/index.html
+- Installation instructions: https://github.com/Rdatatable/data.table/wiki/Installation
+(Note: special instructions for Mac)
+
